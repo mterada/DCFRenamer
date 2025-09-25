@@ -61,19 +61,23 @@ namespace dscren
             return false;
         }
 
-        static void RenameTarget(string target)
+        static void RenameTarget(string target, bool bFileTypes=true)
         {
             if (target.EndsWith(".jpg", true, null))
             {
                 RenameByExifDateTime(target);
             }
-            else
+            else if (ftypes.Contains(Path.GetExtension(target).ToLower()))
+            {
+                RenameByFileDateTime(target);
+            }
+            else if (!bFileTypes)
             {
                 RenameByFileDateTime(target);
             }
         }
 
-        static void RenameFileFolder(string target)
+        static void RenameFileFolder(string target, bool bFileTypes=true)
         {
             if (Directory.Exists(target))
             {
@@ -100,7 +104,8 @@ namespace dscren
             }
             else
             {
-                RenameTarget(target);
+                // 引数で直接指定されたファイルのみ拡張子を無視してリネームする
+                RenameTarget(target, bFileTypes);
             }
         }
 
@@ -277,7 +282,7 @@ namespace dscren
 
             foreach (string target in targets)
             {
-                RenameFileFolder(target);
+                RenameFileFolder(target, false);  // 引数で指定されたファイル名だったら拡張子を無視してリネーム
             }
 
             if (bImported) EjectDcfDrive();
