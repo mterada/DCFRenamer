@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace dscren
 {
@@ -15,37 +16,30 @@ namespace dscren
         static readonly int LASTHOUR_OF_DAY = 2;
         static readonly string[] ftypes = { ".mp4", ".mov", ".avi", ".tif", ".raf", ".nef", ".cr2", ".arw" };
 
-        static bool rename_filename( string old_filename, string new_basename )
+        static bool RenameFilename(string oldFilename, string newBasename)
         {
-            string head = Path.GetDirectoryName(old_filename) + "\\" + new_basename ;
-            string tail = Path.GetExtension(old_filename);
+            string head = Path.GetDirectoryName(oldFilename) + "\\" + newBasename;
+            string tail = Path.GetExtension(oldFilename);
 
-            // 重複による枝番追加は99まで
-            for( int i=0; i<100; i++) {
+            for (int i = 0; i < 100; i++)
+            {
                 string temp = (i == 0) ? "" : "(" + i.ToString() + ")";
                 string path = head + temp + tail;
 
-                if (path.CompareTo(old_filename) == 0) return true; // すでに同じ名前であれば何もせずに終了する
+                if (path.CompareTo(oldFilename) == 0) return true;
+                if (File.Exists(path)) continue;
 
-                if (File.Exists(path)) continue;    // 既存のファイル名とぶつかるなら枝番繰り上げる
-                
-                File.Move(old_filename, path);  // リネーム実行
-                //if (File.Exists(path))        // 成功したかどうかは確認省略
+                File.Move(oldFilename, path);
                 return true;
             }
-            // fail to rename
             return false;
         }
 
-        // フォルダ名をフォルダ直下の最も若いファイル名（文字列として最小）の先頭9文字にリネームする
-        //（但しフォルダ名衝突がある場合は枝番を付与する）
-        static bool rename_foldername( string folderName )
+        static bool RenameFolderName(string folderName)
         {
-            // フォルダ直下のファイル名一覧を取得（サブフォルダは無視）
             var files = Directory.GetFiles(folderName, "*", SearchOption.TopDirectoryOnly);
             if (files.Length == 0) return false;
 
-            // 最も若いファイル名（文字列として最小）を取得
             string minFile = files.OrderBy(f => Path.GetFileName(f)).First();
             string minName = Path.GetFileName(minFile);
             if (minName.Length < 9) return false;
@@ -54,7 +48,6 @@ namespace dscren
             string parentDir = Path.GetDirectoryName(folderName);
             string newFolderName = Path.Combine(parentDir, newFolderBase);
 
-            // 枝番付与（最大99まで）
             string finalFolderName = newFolderName;
             for (int i = 0; i < 100; i++)
             {
@@ -65,112 +58,99 @@ namespace dscren
                     return true;
                 }
             }
-            // リネーム失敗
             return false;
         }
 
-        // 対象のファイルをファイルタイプに応じてリネームする
-        static void rename_target(string target)
+        static void RenameTarget(string target)
         {
-            if (target.EndsWith(".jpg", true, null)) // ignore case of extention
+            if (target.EndsWith(".jpg", true, null))
             {
-                rename_by_exifdatetime(target);
+                RenameByExifDateTime(target);
             }
             else
             {
-                rename_by_filedatetime(target);
+                RenameByFileDateTime(target);
             }
         }
 
-        static void rename_filefolder(string target)
+        static void RenameFileFolder(string target)
         {
-            // 引数がフォルダのとき　（フォルダ直下の全てのファイルを対象とする）
             if (Directory.Exists(target))
             {
-                try {
-                    string[] org_files = Directory.GetFiles(target, "*");
-                    foreach (string name in org_files)      // フォルダ直下の全てのファイルについて
+                try
+                {
+                    string[] orgFiles = Directory.GetFiles(target, "*");
+                    foreach (string name in orgFiles)
                     {
                         if (Directory.Exists(name))
                         {
-                            rename_filefolder(name); // サブフォルダがあれば再帰的に処理
+                            RenameFileFolder(name);
                         }
                         else
                         {
-                            rename_target(name);
+                            RenameTarget(name);
                         }
                     }
-                    // 最後にこのフォルダ名のリネーム
-                    rename_foldername(target);
+                    RenameFolderName(target);
                 }
-                catch (Exception e) {
-                    MessageBox.Show("GetFiles Error> " + e.ToString());
+                catch (Exception e)
+                {
+                    CustomMessageBox.Show("GetFiles Error> " + e.ToString());
                 }
             }
-            // 引数がファイルのとき
             else
             {
-                rename_target(target);
+                RenameTarget(target);
             }
         }
-        
-        static string build_datetimestring( DateTime dt )
+
+        static string BuildDateTimeString(DateTime dt)
         {
             int hh = dt.Hour;
-            if( hh <= LASTHOUR_OF_DAY)
+            if (hh <= LASTHOUR_OF_DAY)
             {
-                hh += 24;         // replace today's 01:30 to yesterday's 25:30
+                hh += 24;
                 dt = dt.AddDays(-1);
             }
-            // ex. "2021_0731_2530-12"
-            return string.Format("{0,4:0000}_{1,2:00}{2,2:00}_{3,2:00}{4,2:00}-{5,2:00}", dt.Year, dt.Month, dt.Day, hh, dt.Minute, dt.Second ); 
+            return string.Format("{0,4:0000}_{1,2:00}{2,2:00}_{3,2:00}{4,2:00}-{5,2:00}", dt.Year, dt.Month, dt.Day, hh, dt.Minute, dt.Second);
         }
 
-        static bool rename_by_filedatetime(string org_filename)
+        static bool RenameByFileDateTime(string orgFilename)
         {
-            // not CreationTime but LastWriteTime
-            DateTime dt = System.IO.File.GetLastWriteTime(org_filename);
-            string filename = build_datetimestring(dt);
-
-            //MessageBox.Show("File :" + dt.ToString() + " -> " + filename );
-            return rename_filename(org_filename, filename) ;
+            DateTime dt = System.IO.File.GetLastWriteTime(orgFilename);
+            string filename = BuildDateTimeString(dt);
+            return RenameFilename(orgFilename, filename);
         }
 
-        static bool rename_by_exifdatetime(string org_filename)
+        static bool RenameByExifDateTime(string orgFilename)
         {
-            Bitmap bmp = new Bitmap(org_filename);
-            // Exifタグを読んで撮影日付データを作成する
+            Bitmap bmp = new Bitmap(orgFilename);
             foreach (System.Drawing.Imaging.PropertyItem item in bmp?.PropertyItems)
             {
-                // Exif DateTimeOriginal(0x9003) and characters
-                if(( item.Id == 0x9003) && (item.Type == 2) )
+                if ((item.Id == 0x9003) && (item.Type == 2))
                 {
                     string tagstr = Encoding.ASCII.GetString(item.Value);
-                    //tagstr = tagstr.Trim(new char[] { '\0' });
-
-                    MatchCollection matches = Regex.Matches(tagstr, @"\d+") ;
+                    MatchCollection matches = Regex.Matches(tagstr, @"\d+");
                     if (matches.Count < 6) break;
 
-                    DateTime dt = new DateTime( Int32.Parse(matches[0].Value),      // Years
-                                                Int32.Parse(matches[1].Value),      // Months
-                                                Int32.Parse(matches[2].Value),      // Days
-                                                Int32.Parse(matches[3].Value),      // Hours
-                                                Int32.Parse(matches[4].Value),      // Minutes
-                                                Int32.Parse(matches[5].Value) );    // Seconds
-                    string filename = build_datetimestring(dt);
-
-                    //MessageBox.Show(" Exif :" + dt.ToString() + " -> " + filename) ;
+                    DateTime dt = new DateTime(
+                        Int32.Parse(matches[0].Value),
+                        Int32.Parse(matches[1].Value),
+                        Int32.Parse(matches[2].Value),
+                        Int32.Parse(matches[3].Value),
+                        Int32.Parse(matches[4].Value),
+                        Int32.Parse(matches[5].Value)
+                    );
+                    string filename = BuildDateTimeString(dt);
                     bmp.Dispose();
-                    return rename_filename(org_filename, filename);
+                    return RenameFilename(orgFilename, filename);
                 }
             }
-            // as jpeg without exif tag
             bmp?.Dispose();
-            return rename_by_filedatetime(org_filename) ;
+            return RenameByFileDateTime(orgFilename);
         }
 
-        // システムのリムーバブルドライブから \DCIM\nnn* フォルダをデスクトップにコピーし、コピー先フォルダのリストを返す
-        static List<string> import_dcf_folder()
+        static List<string> ImportDcfFolder()
         {
             var copiedFolders = new List<string>();
             string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -185,7 +165,6 @@ namespace dscren
                 {
                     string folderName = Path.GetFileName(dir);
                     string destPath = Path.Combine(desktopPath, folderName);
-                    // コピー先が既に存在する場合は枝番を付与
                     string finalDest = destPath;
                     int idx = 1;
                     while (Directory.Exists(finalDest))
@@ -200,7 +179,50 @@ namespace dscren
             return copiedFolders;
         }
 
-        // ディレクトリを再帰的にコピーする補助関数
+        static void EjectDcfDrive()
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                if (drive.DriveType != DriveType.Removable || !drive.IsReady)
+                    continue;
+                string dcimPath = Path.Combine(drive.RootDirectory.FullName, "DCIM");
+                if (!Directory.Exists(dcimPath))
+                    continue;
+
+                string driveLetter = drive.Name.TrimEnd('\\');
+                DialogResult result = CustomMessageBox.Show("コピーし終えたメディアのドライブを取り外しますか？\n\nドライブ名　(" + driveLetter　+")",
+                     "DCF Renamer",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Information
+                );
+                if (result == DialogResult.OK)
+                {
+                    try
+                    {
+                        var proc = Process.Start("RemoveDrive.exe", driveLetter + " /L");
+                        if(proc != null)
+                        {
+                            proc.WaitForExit(60000);  // 最大60秒待つ
+                            if (proc.HasExited)
+                            {
+                                CustomMessageBox.Show("ドライブ名 (" + driveLetter + ") を取り外しました。");
+                                return;
+                            }
+                            else {
+                                proc.Kill();
+                            }
+                        }
+                        CustomMessageBox.Show("ドライブ名 (" + driveLetter + ") を取り外せませんでした。\n手動で取り外し操作を行って下さい。");
+                    }
+                    catch (Exception e)
+                    {
+                        CustomMessageBox.Show("Failed to remove drive " + driveLetter + " -> " + e.Message);
+                    }
+                }
+            }
+            return;
+        }
+
         static void CopyDirectory(string sourceDir, string destDir)
         {
             Directory.CreateDirectory(destDir);
@@ -219,41 +241,47 @@ namespace dscren
 
         /// </summary>
         [STAThread]
-        static void Main( string[] args )
+        static void Main(string[] args)
         {
-            string[] org_targets;
+            string[] targets;
+            bool bImported = false;
 
-            if (args.Length < 1) {
-                DialogResult result = MessageBox.Show(
-                    "USAGE> dcf_renamer foldername\n  or\nUSAGE> dcf_renamer file1 file2 file3 ...\n  or\n[OK] to import DCF folder now, and rename them.",
+            if (args.Length < 1)
+            {
+                DialogResult result = CustomMessageBox.Show(
+                    "usage> dcf_renamer フォルダ名\n  or\nusage> dcf_renamer file1 file2 file3 ...\n  or\nリムーバブルドライブの撮影画像フォルダを自動検出し\nデスクトップにリネームコピーしますか？",
+                    //"リムーバブルドライブの撮影画像フォルダを自動検出し\nデスクトップにリネームコピーしますか？",
                     "DCF Renamer",
                     MessageBoxButtons.OKCancel,
                     MessageBoxIcon.Information
                 );
                 if (result == DialogResult.OK)
                 {
-                    org_targets = import_dcf_folder().ToArray();
-                    if (org_targets.Length == 0)
+                    targets = ImportDcfFolder().ToArray();
+                    if (targets.Length == 0)
                     {
-                        MessageBox.Show("No DCF folder found in removable drives.");
+                        CustomMessageBox.Show("撮影画像（DCF）があるメディアが\nリムーバブルドライブから見つかりませんでした。", "DCF Renamer");
                         return;
                     }
+                    bImported = true;
                 }
                 else
                 {
                     return;
                 }
             }
-            else {
-                org_targets = args;
-            }
-
-            foreach (string target in org_targets)
+            else
             {
-                rename_filefolder(target);
+                targets = args;
             }
 
-            
+            foreach (string target in targets)
+            {
+                RenameFileFolder(target);
+            }
+
+            if (bImported) EjectDcfDrive();
+
            /*
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
